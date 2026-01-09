@@ -15,11 +15,11 @@ int init_maindb(sqlite3* mdb) {
      */
     const char *user_stmt =
         "CREATE TABLE IF NOT EXISTS users ("
-            "id         INT PRIMARY KEY NOT NULL, "
+            "id         INTEGER PRIMARY KEY NOT NULL, "
             "user_name  VARCHAR(50) UNIQUE, "
             "first_name VARCHAR(50) NOT NULL, "
             "last_name  VARCHAR(50) NOT NULL, "
-            "age        INT NOT NULL, "
+            "age        INTEGER NOT NULL, "
             "password   VARCHAR(20) NOT NULL"
         ");"
     ;
@@ -77,6 +77,7 @@ int init_maindb(sqlite3* mdb) {
 
     /* Statement for the budget table.
      * Spending limits for a certain period of time for certain categories of transactions
+     * This will only serve as a suggestion and would force to be implemented if user adds an upper limit for budget, otherwise it can be ignored
      */
     const char *budget_stmt =
         "CREATE TABLE IF NOT EXISTS budgets ("
@@ -107,17 +108,17 @@ int init_maindb(sqlite3* mdb) {
         return -1;
     }
 
-    if (sqlite3_exec(mdb, category_stmt, nullptr, nullptr, &err) != SQLITE_OK) {
+    if (sqlite3_exec(mdb, category_stmt, nullptr, nullptr, &err) != SQLITE_OK) {       //To create CATEGORY TABLE and to check for any errors
         cerr << err << endl;
         return -1;
     }
 
-    if (sqlite3_exec(mdb, transaction_stmt, nullptr, nullptr, &err) != SQLITE_OK) {
+    if (sqlite3_exec(mdb, transaction_stmt, nullptr, nullptr, &err) != SQLITE_OK) {    //To create TRANSACTION TABLE and to check for any errors
         cerr << err << endl;
         return -1;
     }
 
-    if (sqlite3_exec(mdb, budget_stmt, nullptr, nullptr, &err) != SQLITE_OK) {
+    if (sqlite3_exec(mdb, budget_stmt, nullptr, nullptr, &err) != SQLITE_OK) {         //To create BUDGET TABLE and to check for any errors
         cerr << err << endl;
         return -1;
     }
