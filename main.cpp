@@ -34,14 +34,14 @@ int init_maindb(sqlite3* mdb) {
         "CREATE TABLE IF NOT EXISTS moneypools ("
             "id                 INTEGER PRIMARY KEY NOT NULL, "
             "user_id            INTEGER NOT NULL, "
-            "pool_name          VARCHAR(50) NOT NULL, "                 
+            "pool_name          VARCHAR(50) NOT NULL, "
             "initial_balance    DECIMAL(10,2) DEFAULT 0, "
 
             "FOREIGN KEY (user_id) REFERENCES users(id)"
             "UNIQUE (user_id, pool_name)"
         ");"
     ;
-    
+
     /* Statement for the category table. It could be food, rent, whatever...
      * Useful when budgeting. Like say you wanted to cap food spendings for a bit,
      * you'd restrict all transaction with the food category such that the total
@@ -58,7 +58,7 @@ int init_maindb(sqlite3* mdb) {
             "UNIQUE (user_id, name)"
         ");"
     ;
-    
+
     /* Statement for the transaction table. Yada yada
      */
     const char *transaction_stmt =
@@ -96,6 +96,8 @@ int init_maindb(sqlite3* mdb) {
             "FOREIGN KEY (category_id) REFERENCES categories(id)"
         ");"
     ;
+
+    sqlite3_extended_result_codes(mdb, true);
 
     if (sqlite3_exec(mdb, "PRAGMA foreign_keys = ON;", nullptr, nullptr, &err)  != SQLITE_OK) {   //To enable foreign keys and to check if any error
         cerr << err << endl;
@@ -157,12 +159,115 @@ void finance_setup(sqlite3* mdb) {
     return;
 }
 
+void clear_screen() {
+    cout << "\033[2J\033[H";
+}
+
+template <typename T> // This bad boy is covering every type of input in one function.
+T input(const char *prompt) {
+    T result;
+
+    while (true) {
+        cout << prompt;
+        cin >> result;
+        if (!cin.fail()) {
+            cin.ignore(MAXIGNORE, '\n');
+            break;
+        }
+
+        cin.clear();
+        cin.ignore(MAXIGNORE, '\n');
+        cout << "Bad input!" << endl;
+    }
+
+    return result;
+}
+
+template <> // We are essentially handling the case when T is string differently
+string input<string>(const char *prompt) {
+    string result;
+    cout << prompt;
+    getline(cin, result);
+
+    return move(result);
+}
+
 /*
  * This is to register user onto the USER TABLE and create his FINANCE TABLE USING ABOVE FUNCTIONS
  */
 void signup_UI(sqlite3* mdb) {
-    cout << "Enter your username: ";
+    const char *insert_stmt_str =
+        "INSERT INTO users (user_name, first_name, last_name, age, password) VALUES"
+        "(?, ?, ?, ?, ?);"
+    ;
+    sqlite3_stmt *stmt = nullptr;
+    string username;
+    string first_name, last_name;
+    int age;
+    string password;
 
+    sqlite3_prepare_v2(mdb, insert_stmt_str, -1, &stmt, nullptr);
+
+    do {
+        first_name =  input<string>("Enter your first name: ");
+        if (first_name.size() > 50) {
+            cout << "First name too big (> 50)!" << endl;
+        }
+    } while (first_name.size() > 50);
+
+    do {
+        last_name = input<string>("Enter your last name: ");
+        if (last_name.size() > 50) {
+            cout << "Last name too big (> 50)!" << endl;
+        }
+    } while (last_name.size() > 50);
+
+    age = input<int>("Enter your age: ");
+
+    do {
+        password = input<string>("Enter your password: ");
+        if (password.size() > 20) {
+            cout << "Password too big (> 20)!" << endl;
+        }
+    } while (password.size() > 20);
+
+    while (true) {
+        do {
+            username = input<string>("Enter your username: ");
+            if (username.size() > 50) {
+                cout << "Username too big (> 50)!" << endl;
+            }
+        } while (username.size() > 50);
+
+        sqlite3_bind_text(stmt, 1, username.c_str(), first_name.size(), SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, first_name.c_str(), first_name.size(), SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, last_name.c_str(), last_name.size(), SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 4, age);
+        sqlite3_bind_text(stmt, 5, password.c_str(), password.size(), SQLITE_STATIC);
+
+        int rc = sqlite3_step(stmt);
+
+        // Useful for testing and shi
+        // cout << rc << endl;
+        // cout << sqlite3_errmsg(mdb) << endl;
+
+        if (rc == SQLITE_CONSTRAINT) {
+            int extended_err = sqlite3_extended_errcode(mdb);
+            if (extended_err == SQLITE_CONSTRAINT_UNIQUE) {
+                cout << "Someone with that username already exists." << endl;
+                sqlite3_reset(stmt);
+                sqlite3_clear_bindings(stmt);
+                continue;
+            }
+        } else if (rc != SQLITE_DONE) {
+            cout << "ERROR: Something bad happened yawr" << endl;
+            sqlite3_finalize(stmt);
+            exit(EXIT_FAILURE);
+        }
+        break;
+    }
+
+    sqlite3_finalize(stmt);
 }
 
 /*
@@ -240,41 +345,36 @@ int main() {
     sqlite3* mdb = nullptr;
     sqlite3_open("main.db", &mdb);
 
+    clear_screen();
     init_maindb(mdb);
 
     int choice;
     do{
-        cout << "1.Sign up\n2.Login\n0.Exit\n\n";
-        cout << "Enter the damn choice: ";
-        cin >> choice;
-        if (cin.fail()){
-            cin.clear();
-            cin.ignore(MAXIGNORE,'\n');
-            cout << "Call kru bacha?" << endl;
-        }
+        cout << "0.Exit\n1.Sign up\n2.Login\n\n";
+        choice = input<int>("Enter the damn choice: ");
+
+        clear_screen();
         switch(choice){
-        
+        case 0:
+            break;
+
         case 1:
             signup_UI(mdb);
             break;
+
         case 2:
-            login_UI(mdb);
+            // login_UI(mdb);
             break;
-        case 0:
-            break;
+
         default:
             cout << "call kru bacha?";
             continue;
         }
-        break;
-    }while(choice != 0);
-   
-    
 
+        break;
+    } while(choice != 0);
 
     sqlite3_close(mdb);
-
-
 }
 
 
