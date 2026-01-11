@@ -1,7 +1,11 @@
 #include <iostream>
+#include <limits>
 #include <sqlite3.h>
 
+
 using namespace std;
+
+const long long int MAXIGNORE = numeric_limits<streamsize>::max();
 
 /*
  * Will create tables according to account setups for USER DATABASE
@@ -156,14 +160,15 @@ void finance_setup(sqlite3* mdb) {
 /*
  * This is to register user onto the USER TABLE and create his FINANCE TABLE USING ABOVE FUNCTIONS
  */
-void signup_UI() {
-    return;
+void signup_UI(sqlite3* mdb) {
+    cout << "Enter your username: ";
+
 }
 
 /*
  * This will only pull data from the USER TABLE and FINANCE TABLE and work with FUNCTIONS BELOW
  */
-void login_UI() {
+void login_UI(sqlite3* mdb) {
     return;
 }
 
@@ -237,7 +242,39 @@ int main() {
 
     init_maindb(mdb);
 
+    int choice;
+    do{
+        cout << "1.Sign up\n2.Login\n0.Exit\n\n";
+        cout << "Enter the damn choice: ";
+        cin >> choice;
+        if (cin.fail()){
+            cin.clear();
+            cin.ignore(MAXIGNORE,'\n');
+            cout << "Call kru bacha?" << endl;
+        }
+        switch(choice){
+        
+        case 1:
+            signup_UI(mdb);
+            break;
+        case 2:
+            login_UI(mdb);
+            break;
+        case 0:
+            break;
+        default:
+            cout << "call kru bacha?";
+            continue;
+        }
+        break;
+    }while(choice != 0);
+   
+    
+
+
     sqlite3_close(mdb);
+
+
 }
 
 
