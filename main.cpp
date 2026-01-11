@@ -8,6 +8,18 @@ using namespace std;
 const long long int MAXIGNORE = numeric_limits<streamsize>::max();
 
 /*
+ * This will be used to contain our user information on successful login esp after login_verify() succeeds
+ */
+
+struct User{
+    int id;
+    string username;
+    string firstname;
+    string lastname;
+    int age;
+};
+
+/*
  * Will create tables according to account setups for USER DATABASE
  * Make main db and form tables like usertable(), etc
  */
@@ -132,33 +144,6 @@ int init_maindb(sqlite3* mdb) {
     return 0;
 }
 
-
-void init_usertable(sqlite3* mdb) {
-    return;
-}
-
-/*
- * To setup user accounts and register them on the USER TABLE
- * (Confirm if you want assign finance database here the moment user is registered on USER udb or assign it later)
- */
-void account_setup(sqlite3* mdb) {
-    return;
-}
-
-/*
- * Will finance table which will be ASSIGNED to the USER TABLE using foreign key
- */
-void init_financetable(sqlite3* mdb) {
-    return;
-}
-
-/*
- * To setup the init_finance table (just like account_setup())
- */
-void finance_setup(sqlite3* mdb) {
-    return;
-}
-
 void clear_screen() {
     cout << "\033[2J\033[H";
 }
@@ -192,10 +177,79 @@ string input<string>(const char *prompt) {
     return move(result);
 }
 
+
+/*
+ * This functions is used when user logins successfully and wants to view his account types i.e bank, card, easypaisa, etc
+ */
+void view_moneypool(sqlite3* mdb, User u) {
+    return;
+}
+
+/*
+ * This functions is used when user logins successfully and wants to edit his account types i.e bank, card, easypaisa, etc
+ */
+void moneypool_add(sqlite3* mdb, User u) {
+    string pool_name;
+    double balance;
+
+    sqlite3_stmt* stmt;
+    const char* insert_stmt = "INSERT INTO moneypools (user_id, pool_name, initial_balance) VALUES"
+    "(?, ?, ?);";
+    sqlite3_prepare_v2(mdb, insert_stmt, -1, &stmt, nullptr);
+
+    do{
+        balance = input<double>("Enter the initial balance for this money pool");
+        if (balance < 0){
+            cout << "Negative balance isn't possible" << endl;
+        }
+    } while (balance < 0);
+
+   
+    while(true){
+        do{
+            pool_name = input<string>("Enter the name of moneypool you want to add: ");
+            if (pool_name.size() > 50){
+                cout << "Name too big (> 50)" << endl;
+                }
+            }while (pool_name.size() > 50 );
+
+        sqlite3_clear_bindings(stmt);
+        sqlite3_bind_int(stmt, 1, u.id);
+        sqlite3_bind_text(stmt, 2, pool_name.c_str(), pool_name.size(), nullptr);
+        sqlite3_bind_double(stmt, 3, balance);
+
+        int rc = sqlite3_step(stmt);
+
+        if (rc == SQLITE_CONSTRAINT){
+            int extended_err = sqlite3_extended_errcode(mdb);
+            if (extended_err = SQLITE_CONSTRAINT_UNIQUE){
+                cout << "Money pool already created with this name" << endl;
+                sqlite3_reset(stmt);
+            }
+            continue;
+        }
+        else if (rc = SQLITE_DONE){
+            break;      //Nikal jaa loop sey seedhi baat no bakwas
+        }
+        else{
+            cout << "Something bad happened yawr\n Fix it Zaddy\nHere's the msg\n";
+            cout << sqlite3_errmsg(mdb) << endl;
+        }
+        
+    }
+    return;    
+}
+
+void moneypool_edit(sqlite3* mdb, User u){
+    return;
+}
+
+
+
 /*
  * This is to register user onto the USER TABLE and create his FINANCE TABLE USING ABOVE FUNCTIONS
  */
-void signup_UI(sqlite3* mdb) {
+void account_setup(sqlite3* mdb) {
     const char *insert_stmt_str =
         "INSERT INTO users (user_name, first_name, last_name, age, password) VALUES"
         "(?, ?, ?, ?, ?);"
@@ -273,16 +327,75 @@ void signup_UI(sqlite3* mdb) {
 /*
  * This will only pull data from the USER TABLE and FINANCE TABLE and work with FUNCTIONS BELOW
  */
-void login_UI(sqlite3* mdb) {
-    return;
+User login_verify(sqlite3* mdb) {
+    string username, pass;
+    User u;     //Our user
+
+    sqlite3_stmt* stmt;
+    const char *check = "SELECT * FROM users WHERE user_name = ? AND password = ?;";    
+    sqlite3_prepare_v2(mdb, check, -1, &stmt, nullptr);
+    while(true){
+        username = input<string>("Enter your username: ");
+        pass = input<string>("Enter your password: ");
+       
+        sqlite3_clear_bindings(stmt);
+        sqlite3_bind_text(stmt, 1, username.c_str(), username.size(),SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, pass.c_str(), pass.size(),SQLITE_STATIC);
+
+        int rc = sqlite3_step(stmt);
+
+        if(rc == SQLITE_DONE){
+            cout << "Invalid username or password please try again!";
+            sqlite3_reset(stmt);
+            continue;
+        }
+        break;      //To break out in-case user enters correct username and pw
+    }
+    u.username = username;
+    u.id = sqlite3_column_int(stmt,0);                      //Stores data in struct to return and be passed to other functions
+    u.firstname = (const char*)sqlite3_column_text(stmt,2);
+    u.lastname = (const char*)sqlite3_column_text(stmt,3);
+    u.age = sqlite3_column_int(stmt,4);
+
+    sqlite3_finalize(stmt);
+    return u;       //PREPARED METH
+    
+
 }
 
 /*
  * Enters here when login_UI() is successful
  * Will add entries based off money_pool types
  */
-void menu_UI() {
-    return;
+void menu_UI(sqlite3* mdb, User u) {
+    clear_screen();
+    int selection;
+    
+    cout << "1.View Money Pools" << endl;
+    cout << "2.Add Money Pool" << endl;
+    cout << "3.Edit Existing Money Pools" << endl;
+    cout << "0.Exit" << endl;
+    do{
+        selection = input<int>("Make your damn choice: ");
+
+        switch(selection){
+            case 1:
+                view_moneypool(mdb, u);
+                break;
+            case 2:
+                moneypool_add(mdb,u);
+                break;
+            case 3:
+                moneypool_edit(mdb,u);
+                break;
+            case 0: 
+                break;
+            default:
+                cout << "Call kru bacha?" << endl;
+        }
+    } while (selection != 0);
+    
+    
 }
 
 /*
@@ -359,19 +472,19 @@ int main() {
             break;
 
         case 1:
-            signup_UI(mdb);
+            account_setup(mdb);
             break;
 
-        case 2:
-            // login_UI(mdb);
+        case 2:{
+            User u = login_verify(mdb);     //Stores prepared user (meth)
+            menu_UI(mdb,u);
             break;
+        }
 
         default:
             cout << "call kru bacha?";
             continue;
         }
-
-        break;
     } while(choice != 0);
 
     sqlite3_close(mdb);
