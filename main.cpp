@@ -1,6 +1,7 @@
 #include <iostream>
 #include <limits>
 #include <sqlite3.h>
+#include <vector>
 
 
 using namespace std;
@@ -77,7 +78,7 @@ int init_maindb(sqlite3* mdb) {
         "CREATE TABLE IF NOT EXISTS transactions ("
             "id             INTEGER PRIMARY KEY NOT NULL, "
             "user_id        INTEGER NOT NULL, "
-            "category_id    INTEGER NOT NULL, "
+            "category_id    INTEGER NULL, "
             "moneypool_id   INTEGER NOT NULL, "
             "amount         DECIMAL(10,2) NOT NULL, "
             "currency       CHAR(3) DEFAULT 'PKR', "
@@ -178,17 +179,52 @@ string input<string>(const char *prompt) {
 }
 
 
+void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
+    return;
+}
+
+
 /*
  * This functions is used when user logins successfully and wants to view his account types i.e bank, card, easypaisa, etc
  */
-void view_moneypool(sqlite3* mdb, User u) {
-    return;
+void view_moneypool(sqlite3* mdb, int user_id) {
+    sqlite3_stmt* stmt;
+    const char* select_stmt = "SELECT id, pool_name, initial_balance FROM moneypools WHERE user_id = ?;";
+    sqlite3_prepare_v2(mdb, select_stmt, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, user_id);
+
+    int count = 1;
+    vector <int> choices;
+    while (sqlite3_step(stmt) == SQLITE_ROW){       //Goes through each row and outputs it with a number so user can make choice
+        string name = (const char*)sqlite3_column_text(stmt,1);
+        double balance = sqlite3_column_double(stmt,2);
+        choices.push_back(sqlite3_column_int(stmt,0));  //Stores the potential indexes in a vector which user will SELECT
+        cout << count << "." << name << "\tInitial Balance is: " << balance << endl;
+        count++;
+    }
+    cout << "\n";
+    sqlite3_finalize(stmt);
+    int selection;
+    
+    do{
+         selection = input<int>("Enter the damn choice: ");
+        if (selection > choices.size() || selection <= 0){
+            cout << "Invalid choice... Input a valid choice!" << endl;
+        }
+    }while (selection > choices.size() || selection <= 0);
+
+     int moneypool_id = choices[selection -1];
+
+     add_transaction(mdb, user_id, moneypool_id);
+
+    
 }
+
 
 /*
  * This functions is used when user logins successfully and wants to edit his account types i.e bank, card, easypaisa, etc
  */
-void moneypool_add(sqlite3* mdb, User u) {
+void moneypool_add(sqlite3* mdb, int user_id) {
     string pool_name;
     double balance;
 
@@ -214,7 +250,7 @@ void moneypool_add(sqlite3* mdb, User u) {
             }while (pool_name.size() > 50 );
 
         sqlite3_clear_bindings(stmt);
-        sqlite3_bind_int(stmt, 1, u.id);
+        sqlite3_bind_int(stmt, 1, user_id);
         sqlite3_bind_text(stmt, 2, pool_name.c_str(), pool_name.size(), nullptr);
         sqlite3_bind_double(stmt, 3, balance);
 
@@ -240,7 +276,7 @@ void moneypool_add(sqlite3* mdb, User u) {
     return;    
 }
 
-void moneypool_edit(sqlite3* mdb, User u){
+void moneypool_edit(sqlite3* mdb, int user_id){
     return;
 }
 
@@ -293,11 +329,11 @@ void account_setup(sqlite3* mdb) {
             }
         } while (username.size() > 50);
 
-        sqlite3_bind_text(stmt, 1, username.c_str(), first_name.size(), SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, first_name.c_str(), first_name.size(), SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 3, last_name.c_str(), last_name.size(), SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, first_name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, last_name.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 4, age);
-        sqlite3_bind_text(stmt, 5, password.c_str(), password.size(), SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 5, password.c_str(), -1, SQLITE_STATIC);
 
         int rc = sqlite3_step(stmt);
 
@@ -339,13 +375,13 @@ User login_verify(sqlite3* mdb) {
         pass = input<string>("Enter your password: ");
        
         sqlite3_clear_bindings(stmt);
-        sqlite3_bind_text(stmt, 1, username.c_str(), username.size(),SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, pass.c_str(), pass.size(),SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, username.c_str(), -1 ,SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, pass.c_str(), -1 ,SQLITE_TRANSIENT);
 
         int rc = sqlite3_step(stmt);
 
-        if(rc == SQLITE_DONE){
-            cout << "Invalid username or password please try again!";
+        if(rc != SQLITE_ROW){
+            cout << "Invalid username or password please try again!" << endl;
             sqlite3_reset(stmt);
             continue;
         }
@@ -371,22 +407,22 @@ void menu_UI(sqlite3* mdb, User u) {
     clear_screen();
     int selection;
     
-    cout << "1.View Money Pools" << endl;
-    cout << "2.Add Money Pool" << endl;
-    cout << "3.Edit Existing Money Pools" << endl;
-    cout << "0.Exit" << endl;
     do{
+        cout << "1.View Money Pools" << endl;
+        cout << "2.Add Money Pool" << endl;
+        cout << "3.Edit Existing Money Pools" << endl;
+        cout << "0.Exit" << endl;
         selection = input<int>("Make your damn choice: ");
 
         switch(selection){
             case 1:
-                view_moneypool(mdb, u);
-                break;
+                view_moneypool(mdb, u.id);
+                break;                          //Directly passing user id from the struct defined instead of the ENTIRE struct
             case 2:
-                moneypool_add(mdb,u);
+                moneypool_add(mdb,u.id);
                 break;
             case 3:
-                moneypool_edit(mdb,u);
+                moneypool_edit(mdb,u.id);
                 break;
             case 0: 
                 break;
@@ -458,11 +494,11 @@ int main() {
     sqlite3* mdb = nullptr;
     sqlite3_open("main.db", &mdb);
 
-    clear_screen();
     init_maindb(mdb);
 
     int choice;
     do{
+        clear_screen();
         cout << "0.Exit\n1.Sign up\n2.Login\n\n";
         choice = input<int>("Enter the damn choice: ");
 
