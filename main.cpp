@@ -4,6 +4,7 @@
 #include <vector>
 #include <iomanip>
 
+#include <openssl/evp.h>
 
 using namespace std;
 
@@ -38,7 +39,7 @@ int init_maindb(sqlite3* mdb) {
             "first_name VARCHAR(50) NOT NULL, "
             "last_name  VARCHAR(50) NOT NULL, "
             "age        INTEGER NOT NULL, "
-            "password   VARCHAR(20) NOT NULL"
+            "password   CHAR(32) NOT NULL"
         ");"
     ;
 
@@ -146,6 +147,9 @@ int init_maindb(sqlite3* mdb) {
     return 0;
 }
 
+/* ----------- HELPER FUNCTIONS ----------- */
+
+
 void clear_screen() {
     cout << "\033[2J\033[H";
 }
@@ -179,6 +183,17 @@ string input<string>(const char *prompt) {
     return move(result);
 }
 
+void calc_hash(std::string msg, unsigned char *hash, unsigned int *hash_len) {
+    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+
+    EVP_DigestInit_ex(md_ctx, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(md_ctx, msg.c_str(), msg.size());
+    EVP_DigestFinal_ex(md_ctx, hash, hash_len);
+
+    EVP_MD_CTX_free(md_ctx);
+}
+
+/* ---------------------------------------- */
 
 void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
     return;
@@ -245,9 +260,6 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
     return;
     
 }
-
-
-
 
 /*
  * This functions is used when user logins successfully and wants to view his account types i.e bank, card, easypaisa, etc
@@ -345,8 +357,6 @@ void moneypool_edit(sqlite3* mdb, int user_id){
     return;
 }
 
-
-
 /*
  * This is to register user onto the USER TABLE and create his FINANCE TABLE USING ABOVE FUNCTIONS
  */
@@ -386,6 +396,11 @@ void account_setup(sqlite3* mdb) {
         }
     } while (password.size() > 20);
 
+    unsigned char hash[32];
+    unsigned int hash_len;
+
+    calc_hash(password, hash, &hash_len);
+
     while (true) {
         do {
             username = input<string>("Enter your username: ");
@@ -398,7 +413,7 @@ void account_setup(sqlite3* mdb) {
         sqlite3_bind_text(stmt, 2, first_name.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 3, last_name.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 4, age);
-        sqlite3_bind_text(stmt, 5, password.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 5, (const char *)hash, 32, SQLITE_STATIC);
 
         int rc = sqlite3_step(stmt);
 
@@ -429,19 +444,27 @@ void account_setup(sqlite3* mdb) {
  * This will only pull data from the USER TABLE and FINANCE TABLE and work with FUNCTIONS BELOW
  */
 User login_verify(sqlite3* mdb) {
-    string username, pass;
+    string username;
     User u;     //Our user
+
+    string pass;
+    unsigned char hash[32];
+    unsigned int hash_len = 0;
 
     sqlite3_stmt* stmt;
     const char *check = "SELECT * FROM users WHERE user_name = ? AND password = ?;";    
+
     sqlite3_prepare_v2(mdb, check, -1, &stmt, nullptr);
-    while(true){
+
+    while(true) {
         username = input<string>("Enter your username: ");
         pass = input<string>("Enter your password: ");
        
+        calc_hash(pass, hash, &hash_len);
+       
         sqlite3_clear_bindings(stmt);
-        sqlite3_bind_text(stmt, 1, username.c_str(), -1 ,SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, pass.c_str(), -1 ,SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, (const char *)hash, 32, SQLITE_STATIC);
 
         int rc = sqlite3_step(stmt);
 
@@ -452,6 +475,7 @@ User login_verify(sqlite3* mdb) {
         }
         break;      //To break out in-case user enters correct username and pw
     }
+
     u.username = username;
     u.id = sqlite3_column_int(stmt,0);                      //Stores data in struct to return and be passed to other functions
     u.firstname = (const char*)sqlite3_column_text(stmt,2);
