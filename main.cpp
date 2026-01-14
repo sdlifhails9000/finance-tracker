@@ -86,7 +86,7 @@ int init_maindb(sqlite3* mdb) {
             "currency       CHAR(3) DEFAULT 'PKR', "
             "exchange_rate  DECIMAL(10,2) DEFAULT 1, " /* Exchange rate is always relative to the pakistani rupee. */
             "timestamp      DATETIME DEFAULT CURRENT_TIMESTAMP," /* Fancy shmancy */
-            "notes          VARCHAR(100), "
+            "notes          VARCHAR(500), "
 
             "FOREIGN KEY (user_id) REFERENCES users(id), "
             "FOREIGN KEY (category_id) REFERENCES categories(id), "
@@ -196,6 +196,62 @@ void calc_hash(std::string msg, unsigned char *hash, unsigned int *hash_len) {
 /* ---------------------------------------- */
 
 void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
+    sqlite3_stmt *stmt;
+    string currency, notes;
+    double exchange_rate;
+
+    const char* insert_stmt = "INSERT INTO transactions (amount, currency, exchange_rate, notes, user_id, moneypool_id) VALUES"
+    "(?,?,?,?,?,?);";
+
+    sqlite3_prepare_v2(mdb, insert_stmt, -1, &stmt, nullptr);
+
+    double amount = input<double>("Enter the amount: ");        //negative for spending and positive for receiving
+    do{
+        currency = input<string>("Enter currency type (PKR, USD, etc, default is PKR): ");
+        if (currency.size() == 0){
+            currency = "PKR";
+            break;
+        }
+        
+        else if (currency.size() !=3){
+            cout << "Invalid currency type bacha";
+        }
+        
+    }while(currency.size() != 3);
+    do{
+        exchange_rate = input<double>("Enter the current exchange rate for the currency type you entered ('0' if you want it to be default pkr): ");
+        if (exchange_rate < 0 ){
+            cout << "Illegal in 14 states sir" << endl;
+        }
+        else if (exchange_rate == 0){
+            exchange_rate = 1;
+            break;
+        }
+        
+    }while (exchange_rate < 0);
+    do{
+        notes = input<string>("Enter any comment regarding this transaction ( < 500 ): ");
+        if (notes.size() > 500){
+            cout << "Mfer this is a notes section not your r/Hentai section you tharki pedo" << endl;
+        }
+    }while (notes.size() > 500);
+
+    sqlite3_clear_bindings(stmt);
+    sqlite3_bind_double(stmt, 1, amount);
+    sqlite3_bind_text(stmt, 2, currency.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_double(stmt, 3, exchange_rate);
+    sqlite3_bind_text(stmt, 4, notes.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 5, user_id);
+    sqlite3_bind_int(stmt, 6, moneypool_id);
+
+    int rc = sqlite3_step(stmt);
+    if(rc != SQLITE_DONE){
+        cout << "Body Cam Off Since Vietnam BOY!" << endl;
+        cout << sqlite3_errmsg(mdb) << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    sqlite3_finalize(stmt);
     return;
 }
 
@@ -220,6 +276,7 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
         cout << "Your list is empty. Please enter something you dipshit" << endl;
         break;
     case SQLITE_ROW:
+        cout << "Id | amount | type | note | Time" << endl;
          do{
             int id = sqlite3_column_int(stmt, 0);
             max_id = id;
@@ -228,7 +285,8 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
             const char* currency = (const char*)sqlite3_column_text(stmt, 2);       //Test case 101 if anything breaks blame this mfer const char (replace with string then)
             double exchange_rate = sqlite3_column_double(stmt, 3);
             const char* timestamp = (const char*)sqlite3_column_text(stmt, 4);
-            cout << id << " | " << fixed << setprecision(2) << amount <<" | " << currency << " | " << fixed << setprecision(2) << exchange_rate << " | " << timestamp << endl;
+            const char* notes = (const char*)sqlite3_column_text(stmt, 5);
+            cout << id << " | " << fixed << setprecision(2) << amount <<" | " << currency << " | " << fixed << setprecision(2) << exchange_rate << " | "<< notes << " | " << timestamp << endl;
         }while(sqlite3_step(stmt) == SQLITE_ROW);
         break;
     default:
@@ -272,13 +330,17 @@ void view_moneypool(sqlite3* mdb, int user_id) {
 
     int count = 1;
     vector <int> choices;
-    while (sqlite3_step(stmt) == SQLITE_ROW){       //Goes through each row and outputs it with a number so user can make choice
+    if (sqlite3_step(stmt) != SQLITE_ROW && count == 1){
+        cout << "Store empty big boy" << endl;
+        return;
+    } 
+    do{       //Goes through each row and outputs it with a number so user can make choice
         string name = (const char*)sqlite3_column_text(stmt,1);
         double balance = sqlite3_column_double(stmt,2);
         choices.push_back(sqlite3_column_int(stmt,0));  //Stores the potential indexes in a vector which user will SELECT
         cout << count << "." << name << "\tInitial Balance is: " << balance << endl;
         count++;
-    }
+    }while (sqlite3_step(stmt) == SQLITE_ROW);
     cout << "\n";
     sqlite3_finalize(stmt);
     int selection;
@@ -521,25 +583,6 @@ void menu_UI(sqlite3* mdb, User u) {
     } while (selection != 0);
     
     
-}
-
-/*
- * To add items in the predefined slots of finance table based off which user is using
- * Will be added to finance table grouped using USER_ID in USER TABLE as foreign key
- */
-
-void add_item(sqlite3* mdb) {
-    return;
-}
-
-/*
- * To remove items in order to handle clutter or the ones which user doesn't want to see
- * (Sort of pointless as user is using this to keep TRACK but ehh better safe than sorry)
- * Will be added to finance table grouped using USER_ID in USER TABLE as foreign key
- */
-
-void remove_item(sqlite3* mdb) {
-    return;
 }
 
 /*
