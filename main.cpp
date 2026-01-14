@@ -2,6 +2,7 @@
 #include <limits>
 #include <sqlite3.h>
 #include <vector>
+#include <iomanip>
 
 
 using namespace std;
@@ -78,7 +79,7 @@ int init_maindb(sqlite3* mdb) {
         "CREATE TABLE IF NOT EXISTS transactions ("
             "id             INTEGER PRIMARY KEY NOT NULL, "
             "user_id        INTEGER NOT NULL, "
-            "category_id    INTEGER NULL, "
+            "category_id    INTEGER,"
             "moneypool_id   INTEGER NOT NULL, "
             "amount         DECIMAL(10,2) NOT NULL, "
             "currency       CHAR(3) DEFAULT 'PKR', "
@@ -184,6 +185,70 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
 }
 
 
+void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, int max_id){
+    return;
+}
+
+
+void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
+    cout << "Welcome to ur finances\n";
+
+    sqlite3_stmt *stmt;
+    const char* view_stmt = "SELECT id, amount, currency, exchange_rate, timestamp, notes FROM transactions where user_id = ? AND moneypool_id = ?;"; 
+    sqlite3_prepare_v2(mdb, view_stmt, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, user_id);
+    sqlite3_bind_int(stmt, 2, moneypool_id);
+
+    int max_id;
+    switch(sqlite3_step(stmt)){
+    case SQLITE_DONE:
+        cout << "Your list is empty. Please enter something you dipshit" << endl;
+        break;
+    case SQLITE_ROW:
+         do{
+            int id = sqlite3_column_int(stmt, 0);
+            max_id = id;
+
+            double amount = sqlite3_column_double(stmt, 1);
+            const char* currency = (const char*)sqlite3_column_text(stmt, 2);       //Test case 101 if anything breaks blame this mfer const char (replace with string then)
+            double exchange_rate = sqlite3_column_double(stmt, 3);
+            const char* timestamp = (const char*)sqlite3_column_text(stmt, 4);
+            cout << id << " | " << fixed << setprecision(2) << amount <<" | " << currency << " | " << fixed << setprecision(2) << exchange_rate << " | " << timestamp << endl;
+        }while(sqlite3_step(stmt) == SQLITE_ROW);
+        break;
+    default:
+        cout << "Call karu bacha?";
+        
+    }
+    int selection;
+    do{
+        cout << "1.Add Transaction\n2.Edit Transaction\n0.Exit\n";
+        selection = input<int>("Make your damn choice big boy: ");
+        
+        switch(selection){
+        case 1:
+            add_transaction(mdb, user_id, moneypool_id);
+            break;
+
+        case 2:
+            edit_transaction(mdb, user_id, moneypool_id, max_id);   //max_id is to be passed so that we have the upper limit of VALID CHOICES (improves efficiency so we dont have to reconstruct it in edit_transaction())
+            break;
+
+        case 0:
+            break;
+
+        default:
+            cout << "Call kru bacha?" << endl;    
+        }
+        break;
+    }while (selection != 0);
+    return;
+    
+}
+
+
+
+
 /*
  * This functions is used when user logins successfully and wants to view his account types i.e bank, card, easypaisa, etc
  */
@@ -215,7 +280,7 @@ void view_moneypool(sqlite3* mdb, int user_id) {
 
      int moneypool_id = choices[selection -1];
 
-     add_transaction(mdb, user_id, moneypool_id);
+     transaction_UI(mdb, user_id, moneypool_id);
 
     
 }
@@ -251,7 +316,7 @@ void moneypool_add(sqlite3* mdb, int user_id) {
 
         sqlite3_clear_bindings(stmt);
         sqlite3_bind_int(stmt, 1, user_id);
-        sqlite3_bind_text(stmt, 2, pool_name.c_str(), pool_name.size(), nullptr);
+        sqlite3_bind_text(stmt, 2, pool_name.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_double(stmt, 3, balance);
 
         int rc = sqlite3_step(stmt);
@@ -375,8 +440,8 @@ User login_verify(sqlite3* mdb) {
         pass = input<string>("Enter your password: ");
        
         sqlite3_clear_bindings(stmt);
-        sqlite3_bind_text(stmt, 1, username.c_str(), -1 ,SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, pass.c_str(), -1 ,SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 1, username.c_str(), -1 ,SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, pass.c_str(), -1 ,SQLITE_STATIC);
 
         int rc = sqlite3_step(stmt);
 
