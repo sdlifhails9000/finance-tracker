@@ -85,7 +85,7 @@ int init_maindb(sqlite3* mdb) {
             "category_id    INTEGER NULL,"
             "moneypool_id   INTEGER NOT NULL, "
             "amount         DECIMAL(10,2) NOT NULL, "
-            "currency       CHAR(3) DEFAULT 'PKR', "
+            "currency       CHAR(3) NOT NULL DEFAULT 'PKR', "
             "exchange_rate  DECIMAL(10,2) DEFAULT 1, " /* Exchange rate is always relative to the pakistani rupee. */
             "timestamp      DATETIME DEFAULT CURRENT_TIMESTAMP," /* Fancy shmancy */
             "notes          VARCHAR(500) NULL, "
@@ -187,6 +187,10 @@ string input<string>(const char *prompt) {
     getline(cin, result);
 
     return result;
+}
+
+string input_multiline(const char *prompt) {
+    return "";
 }
 
 void calc_hash(std::string msg, unsigned char *hash, unsigned int *hash_len) {
@@ -300,6 +304,7 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
         cout << "Body Cam Off Since Vietnam BOY!" << endl;
         cout << sqlite3_errmsg(mdb) << endl;
         sqlite3_finalize(stmt);
+        sqlite3_close(mdb);
         exit(EXIT_FAILURE);
     }
 
@@ -308,6 +313,133 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
 }
 
 void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, vector<int> transaction_ids) {
+    sqlite3_stmt *stmt;
+    const char *stmt_str =
+        "UPDATE transactions "
+        "SET amount = ?, currency = ?, exchange_rate = ?, category_id = ?, notes = ? "
+        "WHERE id = ?;";
+
+    int transaction_id = -1;
+    int category = -1;
+    double amount;
+    double exchange_rate = 1.0;
+    string currency;
+    string notes;
+
+    while (true) {
+        transaction_id = input<int>("Enter a transaction ID to edit (-1 to exit): ");
+        if (transaction_id == -1) {
+            return;
+        } else if (find(transaction_ids.begin(), transaction_ids.end(), transaction_id) == transaction_ids.end()) {
+            cout << "Invalid transaction ID" << endl;
+            continue;
+        }
+        break;
+    }
+
+    do {
+        amount = input<double>("Enter new amount (must non-zero): ");
+        if (amount == 0) {
+            cout << "Moron" << endl;
+        }
+    } while (amount == 0);
+
+    do {
+        currency = input<string>("Enter a new currency (Leave empty for PKR): ");
+        if (currency.size() == 0) {
+            break;
+        }
+        if (currency.size() != 3) {
+            cout << "Invalid format" << endl;
+        }
+    } while (currency.size() != 3);
+
+    for (auto& c : currency) {
+        c = toupper(c);
+    }
+
+    if (currency.size() != 0 && currency != "PKR") {
+        do {
+            exchange_rate = input<double>("Enter an exchange rate relative to PKR: ");
+            if (exchange_rate <= 0) {
+                cout << "Can't be non-positive" << endl;
+            }
+        } while (exchange_rate <= 0);
+    }
+
+    if (currency.size() == 0) {
+        currency = "PKR";
+    }
+
+    do {
+        notes = input<string>("Enter notes: ");
+        if (notes.size() > 500) {
+            cout << "Note too big" << endl;
+        }
+    } while (notes.size() > 500);
+
+    // Display categories
+
+    sqlite3_stmt *stmt1;
+    const char *select_stmt = "SELECT id, name FROM categories WHERE user_id = ?;";
+
+    sqlite3_prepare_v2(mdb, select_stmt, -1, &stmt1, nullptr);
+    sqlite3_bind_int(stmt1, 1, user_id);
+
+    cout << endl;
+
+    if (sqlite3_step(stmt1) != SQLITE_ROW) {
+        cout << "There are no categories! Make some, BIG BOY!!!" << endl;
+    } else {
+        vector<int> category_list;
+
+        cout << "ID | name" << endl;
+        do {
+            int id = sqlite3_column_int(stmt1, 0);
+            const char *name = (const char*)sqlite3_column_text(stmt1, 1);
+
+            // Pushes a set of valid categories into this fucking list that we made.
+            category_list.push_back(id);
+
+            cout << id << " | " <<  name << endl;
+        } while (sqlite3_step(stmt1) == SQLITE_ROW);
+
+        sqlite3_finalize(stmt1);
+
+        while (true) {
+            category = input<int>("Select a category (-1 for none): ");
+            if (category == -1) {
+                break;
+            } else if (find(category_list.begin(), category_list.end(), category) == category_list.end()) {
+                cout << "Invalid category ID" << endl;
+                continue;
+            }
+            break;
+        }
+    }
+
+    // ---------------------
+
+    sqlite3_prepare_v2(mdb, stmt_str, -1, &stmt, nullptr);
+    sqlite3_bind_double(stmt, 1, amount);
+    sqlite3_bind_text(stmt, 2, currency.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_double(stmt, 3, exchange_rate);
+
+    // Shaheer is a bit spooked here.    
+    if (category != -1) {
+        sqlite3_bind_int(stmt, 4, category);
+    }
+
+    sqlite3_bind_text(stmt, 5, notes.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 6, transaction_id);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        cout << sqlite3_errmsg(mdb) << endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(mdb);
+        exit(EXIT_FAILURE);
+    }
+    
     return;
 }
 
@@ -499,8 +631,90 @@ void moneypool_add(sqlite3* mdb, int user_id) {
     return;    
 }
 
+/*
+ * moneypool_edit: Displays a UI which lets the user select and edit moneypools
+ *
+ * arguments:
+ *   -> mdb: database connection
+ *   -> user_id: current logged-in user's id
+ *
+ * this function is super dangerous. If you use this, tum par laanat ho.
+ */
 void moneypool_edit(sqlite3* mdb, int user_id){
-    return;
+    sqlite3_stmt* stmt;
+    const char *select_stmt = "SELECT * FROM moneypools WHERE user_id = ?;";
+    vector<int> moneypool_ids;
+    
+    sqlite3_prepare_v2(mdb, select_stmt, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, user_id);
+    
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        cout << "There are absolutely no fucking pools" << endl;
+        return;
+    }
+
+    cout << "ID | name | initial balance" << endl;
+    do {
+        int id = sqlite3_column_int(stmt, 0);
+        const char *name = (const char*)sqlite3_column_text(stmt, 2);
+        double initial_balance = sqlite3_column_double(stmt, 3);
+
+        moneypool_ids.push_back(id);
+        cout << id << " | "
+             << name << " | "
+             << fixed << setprecision(2) << initial_balance << endl;
+    } while (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+
+    int moneypool = -1;
+
+    while (true) {
+        moneypool = input<int>("Enter a moneypool id that you want to edit you moronic jackass (-1 to exit): ");
+        if (moneypool == -1) {
+            return;
+        } else if (find(moneypool_ids.begin(), moneypool_ids.end(), moneypool) == moneypool_ids.end()) {
+            cout << "Invalid moneypool ID" << endl;
+            continue;
+        }
+        break;
+    }
+
+    const char *edit_stmt =
+        "UPDATE moneypools "
+        "SET pool_name = ?, initial_balance = ? "
+        "WHERE id = ?;";
+
+    string name;
+    double initial_balance;
+
+    do {
+        name = input<string>("Enter a new name: ");
+        if (name.size() == 0) {
+            cout << "Name can't be empty" << endl;
+        }
+    } while (name.size() == 0);
+
+    do {
+        initial_balance = input<double>("Enter a new initial balance: ");
+        if (initial_balance < 0) {
+            cout << "Can't be negative" << endl;
+        }
+    } while (initial_balance < 0);
+
+
+    sqlite3_prepare_v2(mdb, edit_stmt, -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_double(stmt, 2, initial_balance);
+    sqlite3_bind_int(stmt, 3, moneypool);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        cout << sqlite3_errmsg(mdb) << endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(mdb);
+        exit(EXIT_FAILURE);
+    }
+
+    sqlite3_finalize(stmt);
 }
 
 
@@ -559,6 +773,8 @@ void add_category(sqlite3*mdb, int user_id){
             cout << "Something bad happened yawr\n Fix it Zaddy\nHere's the msg\n";
             cout << sqlite3_errmsg(mdb) << endl;
             cout << rc; //Testing
+            sqlite3_finalize(stmt);
+            sqlite3_close(mdb);
             exit(EXIT_FAILURE);
             
         }
@@ -620,10 +836,14 @@ void edit_category(sqlite3 *mdb, vector<int> category_ids){
                 continue;
             } else {
                 cout << sqlite3_errmsg(mdb) << endl;
+                sqlite3_finalize(stmt);
+                sqlite3_close(mdb);
                 exit(EXIT_FAILURE);
             }
         } else if (rc != SQLITE_DONE) {
             cout << sqlite3_errmsg(mdb) << endl;
+            sqlite3_finalize(stmt);
+            sqlite3_close(mdb);
             exit(EXIT_FAILURE);
         }
     }
@@ -770,6 +990,7 @@ void account_setup(sqlite3* mdb) {
             cout << rc << endl;
             cout << sqlite3_errmsg(mdb) << endl;
             sqlite3_finalize(stmt);
+            sqlite3_close(mdb);
             exit(EXIT_FAILURE);
         }
         break;
@@ -861,8 +1082,6 @@ void menu_UI(sqlite3* mdb, User u) {
                 cout << "Call kru bacha?" << endl;
         }
     } while (selection != 0);
-    
-    
 }
 
 /*
