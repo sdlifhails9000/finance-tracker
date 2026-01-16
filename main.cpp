@@ -14,7 +14,7 @@ const long long int MAXIGNORE = numeric_limits<streamsize>::max();
  * This will be used to contain our user information on successful login esp after login_verify() succeeds
  */
 
-struct User{
+struct User {
     int id;
     string username;
     string firstname;
@@ -116,31 +116,37 @@ int init_maindb(sqlite3* mdb) {
 
     if (sqlite3_exec(mdb, "PRAGMA foreign_keys = ON;", nullptr, nullptr, &err)  != SQLITE_OK) {   //To enable foreign keys and to check if any error
         cerr << err << endl;
+        cerr << sqlite3_errmsg(mdb) << endl;
         return -1;
     }
 
     if (sqlite3_exec(mdb, user_stmt, nullptr, nullptr, &err) != SQLITE_OK) {      //To create USER TABLE and to check for any errors
         cerr << err << endl;
+        cerr << sqlite3_errmsg(mdb) << endl;
         return -1;
     }
 
     if (sqlite3_exec(mdb, moneypool_stmt, nullptr, nullptr, &err) != SQLITE_OK) {      //To create MONEYPOOL TABLE and to check for any errors
         cerr << err << endl;
+        cerr << sqlite3_errmsg(mdb) << endl;
         return -1;
     }
 
     if (sqlite3_exec(mdb, category_stmt, nullptr, nullptr, &err) != SQLITE_OK) {       //To create CATEGORY TABLE and to check for any errors
         cerr << err << endl;
+        cerr << sqlite3_errmsg(mdb) << endl;
         return -1;
     }
 
     if (sqlite3_exec(mdb, transaction_stmt, nullptr, nullptr, &err) != SQLITE_OK) {    //To create TRANSACTION TABLE and to check for any errors
         cerr << err << endl;
+        cerr << sqlite3_errmsg(mdb) << endl;
         return -1;
     }
 
     if (sqlite3_exec(mdb, budget_stmt, nullptr, nullptr, &err) != SQLITE_OK) {         //To create BUDGET TABLE and to check for any errors
         cerr << err << endl;
+        cerr << sqlite3_errmsg(mdb) << endl;
         return -1;
     }
 
@@ -180,7 +186,7 @@ string input<string>(const char *prompt) {
     cout << prompt;
     getline(cin, result);
 
-    return move(result);
+    return result;
 }
 
 void calc_hash(std::string msg, unsigned char *hash, unsigned int *hash_len) {
@@ -217,18 +223,20 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
             cout << "Invalid currency type bacha";
         }
         
-    }while(currency.size() != 3);
-    do{
-        exchange_rate = input<double>("Enter the current exchange rate for the currency type you entered ('0' if you want it to be default pkr): ");
-        if (exchange_rate < 0 ){
-            cout << "Illegal in 14 states sir" << endl;
-        }
-        else if (exchange_rate == 0){
-            exchange_rate = 1;
-            break;
-        }
-        
-    }while (exchange_rate < 0);
+    } while(currency.size() != 3);
+
+    if (currency == "PKR") {
+        exchange_rate = 1;
+    } else {
+        do {
+            exchange_rate = input<double>("Enter the current exchange rate for the currency type you entered: ");
+            if (exchange_rate <= 0 ){
+                cout << "Illegal in 14 states sir" << endl;
+            }
+            
+        }while (exchange_rate <= 0);
+    }
+
     do{
         notes = input<string>("Enter any comment regarding this transaction ( < 500 ): ");
         if (notes.size() > 500){
@@ -262,13 +270,15 @@ void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, int max_id){
 
 
 void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
-    cout << "Welcome to ur finances\n";
+    cout << "\nWelcome to ur finances" << endl;
 
     sqlite3_stmt *stmt;
     const char* view_stmt = "SELECT id, amount, currency, exchange_rate, timestamp, notes FROM transactions where user_id = ? AND moneypool_id = ?;"; 
     sqlite3_prepare_v2(mdb, view_stmt, -1, &stmt, nullptr);
     sqlite3_bind_int(stmt, 1, user_id);
     sqlite3_bind_int(stmt, 2, moneypool_id);
+
+    cout << endl;
 
     int max_id;
     switch(sqlite3_step(stmt)){
@@ -328,35 +338,39 @@ void view_moneypool(sqlite3* mdb, int user_id) {
     sqlite3_prepare_v2(mdb, select_stmt, -1, &stmt, nullptr);
     sqlite3_bind_int(stmt, 1, user_id);
 
+    cout << endl;
+
     int count = 1;
     vector <int> choices;
     if (sqlite3_step(stmt) != SQLITE_ROW && count == 1){
-        cout << "Store empty big boy" << endl;
+        cout << "No moneypools available" << endl;
         return;
     } 
-    do{       //Goes through each row and outputs it with a number so user can make choice
+    do {       //Goes through each row and outputs it with a number so user can make choice
         string name = (const char*)sqlite3_column_text(stmt,1);
         double balance = sqlite3_column_double(stmt,2);
         choices.push_back(sqlite3_column_int(stmt,0));  //Stores the potential indexes in a vector which user will SELECT
         cout << count << "." << name << "\tInitial Balance is: " << balance << endl;
         count++;
-    }while (sqlite3_step(stmt) == SQLITE_ROW);
+    } while (sqlite3_step(stmt) == SQLITE_ROW);
     cout << "\n";
     sqlite3_finalize(stmt);
     int selection;
     
-    do{
-         selection = input<int>("Enter the damn choice: ");
-        if (selection > choices.size() || selection <= 0){
+    do {
+         selection = input<int>("Select a moneypool (enter zero to return to main menu): ");
+        if (selection > choices.size() || selection < 0) {
             cout << "Invalid choice... Input a valid choice!" << endl;
         }
-    }while (selection > choices.size() || selection <= 0);
+    } while (selection > choices.size() || selection < 0);
 
-     int moneypool_id = choices[selection -1];
+    if (selection == 0) {
+        return;
+    }
 
-     transaction_UI(mdb, user_id, moneypool_id);
+    int moneypool_id = choices[selection -1];
 
-    
+    transaction_UI(mdb, user_id, moneypool_id);
 }
 
 
