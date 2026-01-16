@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <vector>
 #include <iomanip>
+#include <algorithm>
 
 #include <openssl/evp.h>
 
@@ -35,7 +36,7 @@ int init_maindb(sqlite3* mdb) {
     const char *user_stmt =
         "CREATE TABLE IF NOT EXISTS users ("
             "id         INTEGER PRIMARY KEY NOT NULL, "
-            "user_name  VARCHAR(50) UNIQUE, "
+            "user_name  VARCHAR(50) NOT NULL UNIQUE, "
             "first_name VARCHAR(50) NOT NULL, "
             "last_name  VARCHAR(50) NOT NULL, "
             "age        INTEGER NOT NULL, "
@@ -67,7 +68,7 @@ int init_maindb(sqlite3* mdb) {
         "CREATE TABLE IF NOT EXISTS categories ("
             "id             INTEGER PRIMARY KEY NOT NULL, "
             "user_id        INTEGER NOT NULL, "
-            "name           VARCHAR(50), "
+            "name           VARCHAR(50) NOT NULL, "
             "budget_amount  DECIMAL (10,2) DEFAULT 0.00,"
 
             "FOREIGN KEY (user_id) REFERENCES users(id), "
@@ -81,13 +82,13 @@ int init_maindb(sqlite3* mdb) {
         "CREATE TABLE IF NOT EXISTS transactions ("
             "id             INTEGER PRIMARY KEY NOT NULL, "
             "user_id        INTEGER NOT NULL, "
-            "category_id    INTEGER,"
+            "category_id    INTEGER NULL,"
             "moneypool_id   INTEGER NOT NULL, "
             "amount         DECIMAL(10,2) NOT NULL, "
             "currency       CHAR(3) DEFAULT 'PKR', "
             "exchange_rate  DECIMAL(10,2) DEFAULT 1, " /* Exchange rate is always relative to the pakistani rupee. */
             "timestamp      DATETIME DEFAULT CURRENT_TIMESTAMP," /* Fancy shmancy */
-            "notes          VARCHAR(500), "
+            "notes          VARCHAR(500) NULL, "
 
             "FOREIGN KEY (user_id) REFERENCES users(id), "
             "FOREIGN KEY (category_id) REFERENCES categories(id), "
@@ -204,9 +205,10 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
     sqlite3_stmt *stmt;
     string currency, notes;
     double exchange_rate;
+    int category = -1;
 
-    const char* insert_stmt = "INSERT INTO transactions (amount, currency, exchange_rate, notes, user_id, moneypool_id) VALUES"
-    "(?,?,?,?,?,?);";
+    const char* insert_stmt = "INSERT INTO transactions (amount, currency, exchange_rate, notes, user_id, moneypool_id, category_id) VALUES"
+    "(?,?,?,?,?,?,?);";
 
     sqlite3_prepare_v2(mdb, insert_stmt, -1, &stmt, nullptr);
 
@@ -233,6 +235,47 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
         }while (exchange_rate <= 0);
     }
 
+    // Display categories
+
+    sqlite3_stmt *stmt1;
+    const char *select_stmt = "SELECT id, name FROM categories WHERE user_id = ?;";
+
+    sqlite3_prepare_v2(mdb, select_stmt, -1, &stmt1, nullptr);
+    sqlite3_bind_int(stmt1, 1, user_id);
+
+    cout << endl;
+
+    if (sqlite3_step(stmt1) != SQLITE_ROW) {
+        cout << "There are no categories! Make some, BIG BOY!!!" << endl;
+    } else {
+        vector<int> category_list;
+
+        cout << "ID | name" << endl;
+        do {
+            int id = sqlite3_column_int(stmt1, 0);
+            const char *name = (const char*)sqlite3_column_text(stmt1, 1);
+
+            // Pushes a set of valid categories into this fucking list that we made.
+            category_list.push_back(id);
+
+            cout << id << " | " <<  name << endl;
+        } while (sqlite3_step(stmt1) == SQLITE_ROW);
+
+        sqlite3_finalize(stmt1);
+
+        while (true) {
+            category = input<int>("Select a category (-1 for none): ");
+            if (category == -1) {
+                break;
+            } else if (find(category_list.begin(), category_list.end(), category) == category_list.end()) {
+                cout << "Invalid category ID" << endl;
+            }
+            break;
+        }
+    }
+
+    // ------------------
+
     do{
         notes = input<string>("Enter any comment regarding this transaction ( < 500 ): ");
         if (notes.size() > 500){
@@ -248,17 +291,21 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
     sqlite3_bind_int(stmt, 5, user_id);
     sqlite3_bind_int(stmt, 6, moneypool_id);
 
+    if (category != -1) {
+        sqlite3_bind_int(stmt, 7, category);
+    }
+
     int rc = sqlite3_step(stmt);
     if(rc != SQLITE_DONE){
         cout << "Body Cam Off Since Vietnam BOY!" << endl;
         cout << sqlite3_errmsg(mdb) << endl;
+        sqlite3_finalize(stmt);
         exit(EXIT_FAILURE);
     }
 
     sqlite3_finalize(stmt);
     return;
 }
-
 
 void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, vector<int> transaction_ids) {
     return;
@@ -270,8 +317,12 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
     vector<int> transaction_ids;
 
     const char* view_stmt =
-        "SELECT id, amount, currency, exchange_rate, timestamp, notes FROM transactions"
-        "WHERE user_id = ? AND moneypool_id = ?;"; 
+        "SELECT "
+            "transactions.id, transactions.amount, transactions.currency, transactions.exchange_rate, transactions.timestamp, transactions.notes,"
+            "categories.name "
+        "FROM transactions "
+        "LEFT JOIN categories ON transactions.category_id = categories.id "
+        "WHERE transactions.user_id = ? AND transactions.moneypool_id = ?;";
 
     sqlite3_prepare_v2(mdb, view_stmt, -1, &stmt, nullptr);
     sqlite3_bind_int(stmt, 1, user_id);
@@ -285,7 +336,7 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
         break;
 
     case SQLITE_ROW:
-        cout << "Id | amount | type | note | Time" << endl;
+        cout << "ID | category | amount | type | note | Time" << endl;
         do {
             int id = sqlite3_column_int(stmt, 0);
             transaction_ids.push_back(id);          //Preparing a vector that stores ids for edit_transaction
@@ -298,8 +349,14 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
             double exchange_rate = sqlite3_column_double(stmt, 3);
             const char* timestamp = (const char*)sqlite3_column_text(stmt, 4);
             const char* notes = (const char*)sqlite3_column_text(stmt, 5);
+            const char *category_name = (const char*)sqlite3_column_text(stmt, 6); 
+            
+            if (category_name == nullptr) {
+                category_name = "(none)";
+            }
 
             cout << id << " | "
+                 << category_name << " | "
                  << fixed << setprecision(2) << amount << " | "
                  << currency << " | "
                  << fixed << setprecision(2) << exchange_rate << " | "
