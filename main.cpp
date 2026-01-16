@@ -65,9 +65,10 @@ int init_maindb(sqlite3* mdb) {
      */
     const char *category_stmt =
         "CREATE TABLE IF NOT EXISTS categories ("
-            "id         INTEGER PRIMARY KEY NOT NULL, "
-            "user_id    INTEGER NOT NULL, "
-            "name       VARCHAR(50), "
+            "id             INTEGER PRIMARY KEY NOT NULL, "
+            "user_id        INTEGER NOT NULL, "
+            "name           VARCHAR(50), "
+            "budget_amount  DECIMAL (10,2) DEFAULT 0.00,"
 
             "FOREIGN KEY (user_id) REFERENCES users(id), "
             "UNIQUE (user_id, name)"
@@ -103,16 +104,14 @@ int init_maindb(sqlite3* mdb) {
             "id             INTEGER PRIMARY KEY NOT NULL,"
             "user_id        INTEGER NOT NULL, "
             "category_id    INTEGER NOT NULL, "
-            "upper_limit    DECIMAL(10,2) NOT NULL, "
-            "start_time     DATETIME NOT NULL, "
-            "end_time       DATETIME NOT NULL, "
+            "upper_limit    DECIMAL(10,2), "
+            "start_time     DATETIME, "
+            "end_time       DATETIME, "
 
             "FOREIGN KEY (user_id) REFERENCES users(id), "
             "FOREIGN KEY (category_id) REFERENCES categories(id)"
         ");"
     ;
-
-    sqlite3_extended_result_codes(mdb, true);
 
     if (sqlite3_exec(mdb, "PRAGMA foreign_keys = ON;", nullptr, nullptr, &err)  != SQLITE_OK) {   //To enable foreign keys and to check if any error
         cerr << err << endl;
@@ -261,13 +260,15 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
 }
 
 
-void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, int max_id) {
+void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, vector<int> transaction_ids) {
     return;
 }
 
 
 void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
     sqlite3_stmt *stmt;
+    vector<int> transaction_ids;
+
     const char* view_stmt =
         "SELECT id, amount, currency, exchange_rate, timestamp, notes FROM transactions"
         "WHERE user_id = ? AND moneypool_id = ?;"; 
@@ -278,7 +279,6 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
 
     cout << "\nWelcome to ur finances\n" << endl;
 
-    int max_id;
     switch (sqlite3_step(stmt)) {
     case SQLITE_DONE:
         cout << "Your list is empty. Please enter something you dipshit" << endl;
@@ -288,7 +288,7 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
         cout << "Id | amount | type | note | Time" << endl;
         do {
             int id = sqlite3_column_int(stmt, 0);
-            max_id = id;
+            transaction_ids.push_back(id);          //Preparing a vector that stores ids for edit_transaction
 
             double amount = sqlite3_column_double(stmt, 1);
             
@@ -326,7 +326,7 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
             break;
 
         case 2:
-            edit_transaction(mdb, user_id, moneypool_id, max_id);   //max_id is to be passed so that we have the upper limit of VALID CHOICES (improves efficiency so we dont have to reconstruct it in edit_transaction())
+            edit_transaction(mdb, user_id, moneypool_id, transaction_ids);   //max_id is to be passed so that we have the upper limit of VALID CHOICES (improves efficiency so we dont have to reconstruct it in edit_transaction())
             break;
 
         default:
@@ -443,6 +443,140 @@ void moneypool_add(sqlite3* mdb, int user_id) {
 }
 
 void moneypool_edit(sqlite3* mdb, int user_id){
+    return;
+}
+
+
+void add_category(sqlite3*mdb, int user_id){
+    string category_name;
+    double budget_amount = 0;
+
+    sqlite3_stmt* stmt;
+    const char* insert_stmt = "INSERT INTO categories (user_id, name, budget_amount) VALUES"
+    "(?, ?, ?);";
+    sqlite3_prepare_v2(mdb, insert_stmt, -1, &stmt, nullptr);
+   
+    while(true) {
+        do {
+            category_name = input<string>("Enter the name of category you want to add: ");
+            if (category_name.size() > 50) {
+                cout << "Name too big (> 50)" << endl;
+            }
+        } while (category_name.size() > 50);
+        char want_budget;
+        want_budget = input<char>("Do you want to set a budget for this category (Y/n)? (Optional)");
+        want_budget = tolower(want_budget);
+
+        if (want_budget == 'y'){
+            do {
+                budget_amount = input<double>("Enter the budget for this category");
+                if (budget_amount <= 0) {
+                    cout << "Negative balance isn't possible" << endl;
+                }
+
+            }while (budget_amount <= 0);
+        }
+        
+
+
+        sqlite3_clear_bindings(stmt);
+        sqlite3_bind_int(stmt, 1, user_id);
+        sqlite3_bind_text(stmt, 2, category_name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_double(stmt, 3, budget_amount);
+
+        int rc = sqlite3_step(stmt);
+
+        if (rc == SQLITE_CONSTRAINT) {
+            int extended_err = sqlite3_extended_errcode(mdb);
+            if (extended_err == SQLITE_CONSTRAINT_UNIQUE){
+                cout << "A Category already exists with this name" << endl;
+                sqlite3_reset(stmt);
+            }
+
+            continue;
+        } else if (rc == SQLITE_DONE) {
+            // Nikal jaa loop sey seedhi baat no bakwas
+            break;
+        } else {
+            cout << "Something bad happened yawr\n Fix it Zaddy\nHere's the msg\n";
+            cout << sqlite3_errmsg(mdb) << endl;
+            cout << rc; //Testing
+            exit(EXIT_FAILURE);
+            
+        }
+        
+    }
+    return;    
+}
+
+void edit_category(sqlite3*mdb, int user_id, vector<int> category_ids){
+    return;
+}
+
+
+
+void category_UI(sqlite3* mdb, int user_id){
+    sqlite3_stmt *stmt;
+    vector<int> category_ids;
+
+    const char* view_stmt =
+        "SELECT id, name, budget_amount FROM categories "
+        "WHERE user_id = ?;"; 
+
+    sqlite3_prepare_v2(mdb, view_stmt, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, user_id);
+
+    clear_screen();
+    cout << "\nWelcome to ur categories\n" << endl;
+
+    int max_id;
+    switch (sqlite3_step(stmt)) {
+    case SQLITE_DONE:
+        cout << "No categories at the moment. Please enter something you dipshit" << endl;
+        break;
+
+    case SQLITE_ROW:
+        cout << "Id | name | Budget" << endl;
+        do {
+            int id = sqlite3_column_int(stmt, 0);
+            category_ids.push_back(id);
+
+            const char* name = (const char*)sqlite3_column_text(stmt, 1);
+            double budget = sqlite3_column_double(stmt, 2);
+
+            max_id = id;
+            cout << id << " | " 
+                 << name << " | "
+                 << fixed << setprecision(2) << budget << endl;
+        } while (sqlite3_step(stmt) == SQLITE_ROW);
+        break;
+
+    default:
+        cout << "Call karu bacha?\n" << sqlite3_errmsg(mdb) << endl;
+    }
+
+    int selection;
+    do {
+        cout << "1.Add Category\n2.Edit Category\n0.Exit\n";
+        selection = input<int>("Make your damn choice big boy: ");
+        
+        switch(selection){
+        case 0:
+            break;
+
+        case 1:
+            add_category(mdb, user_id);
+            break;
+
+        case 2:
+            edit_category(mdb, user_id, category_ids);   //max_id is to be passed so that we have the upper limit of VALID CHOICES (improves efficiency so we dont have to reconstruct it in edit_transaction())
+            break;
+        default:
+            cout << "Call kru bacha?" << endl;
+            continue;    
+        }
+        break;
+    } while (selection != 0);
     return;
 }
 
@@ -588,6 +722,7 @@ void menu_UI(sqlite3* mdb, User u) {
         cout << "1.View Money Pools" << endl;
         cout << "2.Add Money Pool" << endl;
         cout << "3.Edit Existing Money Pools" << endl;
+        cout << "4.Categories Setup (optional)" << endl;
         cout << "0.Exit" << endl;
         selection = input<int>("Make your damn choice: ");
 
@@ -599,7 +734,10 @@ void menu_UI(sqlite3* mdb, User u) {
                 moneypool_add(mdb,u.id);
                 break;
             case 3:
-                moneypool_edit(mdb,u.id);
+                moneypool_edit(mdb, u.id);
+                break;
+            case 4:
+                category_UI(mdb, u.id);
                 break;
             case 0: 
                 break;
