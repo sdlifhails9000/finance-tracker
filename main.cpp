@@ -212,17 +212,14 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
     sqlite3_prepare_v2(mdb, insert_stmt, -1, &stmt, nullptr);
 
     double amount = input<double>("Enter the amount: ");        //negative for spending and positive for receiving
-    do{
+    do {
         currency = input<string>("Enter currency type (PKR, USD, etc, default is PKR): ");
-        if (currency.size() == 0){
+        if (currency.size() == 0) {
             currency = "PKR";
             break;
-        }
-        
-        else if (currency.size() !=3){
+        } else if (currency.size() !=3) {
             cout << "Invalid currency type bacha";
         }
-        
     } while(currency.size() != 3);
 
     if (currency == "PKR") {
@@ -264,51 +261,66 @@ void add_transaction(sqlite3* mdb, int user_id, int moneypool_id){
 }
 
 
-void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, int max_id){
+void edit_transaction(sqlite3* mdb, int user_id, int moneypool_id, int max_id) {
     return;
 }
 
 
-void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
-    cout << "\nWelcome to ur finances" << endl;
-
+void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id) {
     sqlite3_stmt *stmt;
-    const char* view_stmt = "SELECT id, amount, currency, exchange_rate, timestamp, notes FROM transactions where user_id = ? AND moneypool_id = ?;"; 
+    const char* view_stmt =
+        "SELECT id, amount, currency, exchange_rate, timestamp, notes FROM transactions"
+        "WHERE user_id = ? AND moneypool_id = ?;"; 
+
     sqlite3_prepare_v2(mdb, view_stmt, -1, &stmt, nullptr);
     sqlite3_bind_int(stmt, 1, user_id);
     sqlite3_bind_int(stmt, 2, moneypool_id);
 
-    cout << endl;
+    cout << "\nWelcome to ur finances\n" << endl;
 
     int max_id;
-    switch(sqlite3_step(stmt)){
+    switch (sqlite3_step(stmt)) {
     case SQLITE_DONE:
         cout << "Your list is empty. Please enter something you dipshit" << endl;
         break;
+
     case SQLITE_ROW:
         cout << "Id | amount | type | note | Time" << endl;
-         do{
+        do {
             int id = sqlite3_column_int(stmt, 0);
             max_id = id;
 
             double amount = sqlite3_column_double(stmt, 1);
-            const char* currency = (const char*)sqlite3_column_text(stmt, 2);       //Test case 101 if anything breaks blame this mfer const char (replace with string then)
+            
+            //Test case 101 if anything breaks blame this mfer const char (replace with string then)
+            const char* currency = (const char*)sqlite3_column_text(stmt, 2);
+
             double exchange_rate = sqlite3_column_double(stmt, 3);
             const char* timestamp = (const char*)sqlite3_column_text(stmt, 4);
             const char* notes = (const char*)sqlite3_column_text(stmt, 5);
-            cout << id << " | " << fixed << setprecision(2) << amount <<" | " << currency << " | " << fixed << setprecision(2) << exchange_rate << " | "<< notes << " | " << timestamp << endl;
-        }while(sqlite3_step(stmt) == SQLITE_ROW);
+
+            cout << id << " | "
+                 << fixed << setprecision(2) << amount << " | "
+                 << currency << " | "
+                 << fixed << setprecision(2) << exchange_rate << " | "
+                 << notes << " | "
+                 << timestamp << endl;
+        } while (sqlite3_step(stmt) == SQLITE_ROW);
         break;
+
     default:
         cout << "Call karu bacha?";
-        
     }
+
     int selection;
-    do{
+    do {
         cout << "1.Add Transaction\n2.Edit Transaction\n0.Exit\n";
         selection = input<int>("Make your damn choice big boy: ");
         
         switch(selection){
+        case 0:
+            break;
+
         case 1:
             add_transaction(mdb, user_id, moneypool_id);
             break;
@@ -317,14 +329,12 @@ void transaction_UI(sqlite3* mdb, int user_id, int moneypool_id){
             edit_transaction(mdb, user_id, moneypool_id, max_id);   //max_id is to be passed so that we have the upper limit of VALID CHOICES (improves efficiency so we dont have to reconstruct it in edit_transaction())
             break;
 
-        case 0:
-            break;
-
         default:
             cout << "Call kru bacha?" << endl;    
         }
+
         break;
-    }while (selection != 0);
+    } while (selection != 0);
     return;
     
 }
@@ -346,19 +356,22 @@ void view_moneypool(sqlite3* mdb, int user_id) {
         cout << "No moneypools available" << endl;
         return;
     } 
-    do {       //Goes through each row and outputs it with a number so user can make choice
+
+    // Goes through each row and outputs it with a number so user can make choice
+    do {
         string name = (const char*)sqlite3_column_text(stmt,1);
         double balance = sqlite3_column_double(stmt,2);
         choices.push_back(sqlite3_column_int(stmt,0));  //Stores the potential indexes in a vector which user will SELECT
         cout << count << "." << name << "\tInitial Balance is: " << balance << endl;
         count++;
     } while (sqlite3_step(stmt) == SQLITE_ROW);
-    cout << "\n";
+
+    cout << endl;
     sqlite3_finalize(stmt);
+
     int selection;
-    
     do {
-         selection = input<int>("Select a moneypool (enter zero to return to main menu): ");
+        selection = input<int>("Select a moneypool (enter zero to return to main menu): ");
         if (selection > choices.size() || selection < 0) {
             cout << "Invalid choice... Input a valid choice!" << endl;
         }
@@ -388,19 +401,19 @@ void moneypool_add(sqlite3* mdb, int user_id) {
 
     do{
         balance = input<double>("Enter the initial balance for this money pool");
-        if (balance < 0){
+        if (balance < 0) {
             cout << "Negative balance isn't possible" << endl;
         }
     } while (balance < 0);
 
    
-    while(true){
-        do{
+    while(true) {
+        do {
             pool_name = input<string>("Enter the name of moneypool you want to add: ");
-            if (pool_name.size() > 50){
+            if (pool_name.size() > 50) {
                 cout << "Name too big (> 50)" << endl;
-                }
-            }while (pool_name.size() > 50 );
+            }
+        } while (pool_name.size() > 50);
 
         sqlite3_clear_bindings(stmt);
         sqlite3_bind_int(stmt, 1, user_id);
@@ -409,18 +422,18 @@ void moneypool_add(sqlite3* mdb, int user_id) {
 
         int rc = sqlite3_step(stmt);
 
-        if (rc == SQLITE_CONSTRAINT){
+        if (rc == SQLITE_CONSTRAINT) {
             int extended_err = sqlite3_extended_errcode(mdb);
-            if (extended_err = SQLITE_CONSTRAINT_UNIQUE){
+            if (extended_err == SQLITE_CONSTRAINT_UNIQUE){
                 cout << "Money pool already created with this name" << endl;
                 sqlite3_reset(stmt);
             }
+
             continue;
-        }
-        else if (rc = SQLITE_DONE){
-            break;      //Nikal jaa loop sey seedhi baat no bakwas
-        }
-        else{
+        } else if (rc == SQLITE_DONE) {
+            // Nikal jaa loop sey seedhi baat no bakwas
+            break;
+        } else {
             cout << "Something bad happened yawr\n Fix it Zaddy\nHere's the msg\n";
             cout << sqlite3_errmsg(mdb) << endl;
         }
@@ -493,10 +506,6 @@ void account_setup(sqlite3* mdb) {
 
         int rc = sqlite3_step(stmt);
 
-        // Useful for testing and shi
-        // cout << rc << endl;
-        // cout << sqlite3_errmsg(mdb) << endl;
-
         if (rc == SQLITE_CONSTRAINT) {
             int extended_err = sqlite3_extended_errcode(mdb);
             if (extended_err == SQLITE_CONSTRAINT_UNIQUE) {
@@ -507,6 +516,9 @@ void account_setup(sqlite3* mdb) {
             }
         } else if (rc != SQLITE_DONE) {
             cout << "ERROR: Something bad happened yawr" << endl;
+
+            cout << rc << endl;
+            cout << sqlite3_errmsg(mdb) << endl;
             sqlite3_finalize(stmt);
             exit(EXIT_FAILURE);
         }
@@ -532,7 +544,7 @@ User login_verify(sqlite3* mdb) {
 
     sqlite3_prepare_v2(mdb, check, -1, &stmt, nullptr);
 
-    while(true) {
+    while (true) {
         username = input<string>("Enter your username: ");
         pass = input<string>("Enter your password: ");
        
